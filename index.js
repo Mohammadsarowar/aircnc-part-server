@@ -1,6 +1,8 @@
 const express = require('express')
 const app = express()
 const cors = require('cors')
+const jwt = require('jsonwebtoken')
+const morgan = require('morgan')
 require('dotenv').config()
 const port = process.env.PORT || 5000
 
@@ -12,6 +14,7 @@ const corsOptions = {
 }
 app.use(cors(corsOptions))
 app.use(express.json())
+app.use(morgan('dev'))
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const uri = `mongodb://${process.env.DB_USER}:${process.env.DB_PASS}@ac-o6iroya-shard-00-00.wymoxsw.mongodb.net:27017,ac-o6iroya-shard-00-01.wymoxsw.mongodb.net:27017,ac-o6iroya-shard-00-02.wymoxsw.mongodb.net:27017/?ssl=true&replicaSet=atlas-puyajh-shard-0&authSource=admin&retryWrites=true&w=majority`
@@ -24,11 +27,20 @@ const client = new MongoClient(uri, {
   },
 })
 
+
 async function run() {
   try {
     const usersCollection = client.db('aircncDb').collection('users')
     const roomsCollection = client.db('aircncDb').collection('rooms')
     const bookingsCollection = client.db('aircncDb').collection('bookings')
+    // generate token
+    app.post('/jwt',async(req,res)=>{
+       const email = req.body.email
+       console.log(email);
+       res.send(email)
+    })
+    
+    
     //Save user email or data in db 
     app.put('/users/:email',async(req,res)=>{
       const email = req.params.email
@@ -39,7 +51,7 @@ async function run() {
         $set: user 
       }
       const result = await usersCollection.updateOne(query,updateDoc,options)
-      console.log(result);
+  
       res.send(result)
     })
     //Save user email role in db
@@ -52,7 +64,6 @@ async function run() {
         $set: user 
       }
       const result = await usersCollection.updateOne(query,updateDoc,options)
-      console.log(result);
       res.send(result)
     })
     //get users data from db 
@@ -66,7 +77,6 @@ async function run() {
     app.post('/rooms',async(req,res)=>{
       const room = req.body
       const result = await roomsCollection.insertOne(room)
-      console.log(result);
       res.send(result)
     })
     app.patch('/rooms/status/:id',async(req,res)=>{
@@ -91,11 +101,20 @@ async function run() {
       const result = await bookingsCollection.find(query).toArray()
       res.send(result)
     })
+    //get rooms data from db
+    app.get('/bookings/host',async(req,res)=>{
+      const email = req.query.email
+      if(!email){
+        res.send([])
+      }
+      const query = {host:email}
+      const result = await bookingsCollection.find(query).toArray()
+      res.send(result)
+    })
     //Save a booking data from db
     app.post('/bookings',async(req,res)=>{
       const booking = req.body
       const result = await bookingsCollection.insertOne(booking)
-      console.log(result);
       res.send(result)
     })
    //delete a booking data from db
