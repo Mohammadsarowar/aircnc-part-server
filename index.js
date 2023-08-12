@@ -26,7 +26,23 @@ const client = new MongoClient(uri, {
     deprecationErrors: true,
   },
 })
+//validate jwt
+const verifyJwt = (req, res, next) =>{
+  const authorization = req.headers.authorization
+  if(!authorization){
+    return res.status(401).send({error:true, message:'unauthorized access'})
+  }
+  const token = authorization.split(' ')[1]
+  jwt.verify(token,process.env.ACCESS_TOKEN_SECRET,(err,decoded)=>{
+    if(err){
+      return res.status(401).send({error:true, message:'unauthorized access'})
+    }
+    req.decoded = decoded
+       next()
+  })
+  
 
+}
 
 async function run() {
   try {
@@ -34,10 +50,13 @@ async function run() {
     const roomsCollection = client.db('aircncDb').collection('rooms')
     const bookingsCollection = client.db('aircncDb').collection('bookings')
     // generate token
-    app.post('/jwt',async(req,res)=>{
-       const email = req.body.email
-       console.log(email);
-       res.send(email)
+    app.post('/jwt', (req, res) => {
+      const email = req.body
+      const token = jwt.sign(email, process.env.ACCESS_TOKEN_SECRET, {
+        expiresIn: '1h',
+      })
+
+      res.send({ token })
     })
     
     
@@ -130,8 +149,13 @@ async function run() {
       const result = await roomsCollection.find().toArray()
       res.send(result)
     })
-    app.get('/getRoomsData/:email',async(req,res)=>{
-      const email = req.params.email
+    app.get('/getRoomsData/:email',verifyJwt,async(req,res)=>{
+      const decodedEmail = req.decoded.email;
+      console.log(decodedEmail);
+      const email = req.params.email;
+      if(email !== decodedEmail){
+        return res.status(403).send({error:true, message:'Forbidden access'})
+      }
       const query = {'host.email':email}
       const result = await roomsCollection.find(query).toArray()
       res.send(result)
