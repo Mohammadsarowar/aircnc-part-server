@@ -3,6 +3,7 @@ const app = express()
 const cors = require('cors')
 const jwt = require('jsonwebtoken')
 const morgan = require('morgan')
+const nodemailer = require("nodemailer");
 require('dotenv').config()
 const port = process.env.PORT || 5000
 
@@ -18,6 +19,8 @@ app.use(morgan('dev'))
 
 const { MongoClient, ServerApiVersion, ObjectId } = require('mongodb')
 const uri = `mongodb://${process.env.DB_USER}:${process.env.DB_PASS}@ac-o6iroya-shard-00-00.wymoxsw.mongodb.net:27017,ac-o6iroya-shard-00-01.wymoxsw.mongodb.net:27017,ac-o6iroya-shard-00-02.wymoxsw.mongodb.net:27017/?ssl=true&replicaSet=atlas-puyajh-shard-0&authSource=admin&retryWrites=true&w=majority`
+// This is your test secret API key.
+const stripe = require("stripe")(`${process.env.PAYMENT_SECRET_KEY}`);
 
 const client = new MongoClient(uri, {
   serverApi: {
@@ -44,11 +47,51 @@ const verifyJwt = (req, res, next) =>{
 
 }
 
+//send mail function 
+const sendMail = (emailDate, emailAddress ) => {
+  const transporter = nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+  const mailOptions = {
+    from: process.env.EMAIL,
+    to: emailAddress,
+    subject: emailDate?.subject,
+    html:`<p>${emailDate?.message}</p>`
+  };
+  transporter.sendMail(mailOptions, function(error, info){
+    if (error) {
+   console.log(error);
+    } else {
+      console.log('Email sent: ' + info.response);
+      // do something useful
+    }
+  });
+}
+
 async function run() {
   try {
     const usersCollection = client.db('aircncDb').collection('users')
     const roomsCollection = client.db('aircncDb').collection('rooms')
     const bookingsCollection = client.db('aircncDb').collection('bookings')
+    //generate client secret and payment system
+    app.post('/create-payment-intent',verifyJwt, async (req,res)=>{
+      const {price} = req.body;
+     
+      if(price){
+        const amount = parseFloat(price) * 100
+        const paymentIntent = await stripe.paymentIntents.create({
+         amount:amount,
+         currency:'usd',
+         payment_method_types:['card']
+        })
+        res.send({clientSecret:paymentIntent.client_secret})
+      }
+    })
+
     // generate token
     app.post('/jwt', (req, res) => {
       const email = req.body
@@ -134,6 +177,24 @@ async function run() {
     app.post('/bookings',async(req,res)=>{
       const booking = req.body
       const result = await bookingsCollection.insertOne(booking)
+      //send confirmation email to gust email account
+       // Send confirmation email to guest
+       sendMail(
+        {
+          subject: 'Booking Successful!',
+          message: `Booking Id: ${result?.insertedId}, TransactionId: ${booking.transactionId}`,
+        },
+        booking?.guest?.email
+      )
+      //send confirmation email to host email account
+      sendMail(
+        {
+          subject: 'Your room got booked!',
+          message: `Booking Id: ${result?.insertedId}, TransactionId: ${booking.transactionId}. Check dashboard for more info`,
+        },
+        booking?.host
+      )
+    
       res.send(result)
     })
    //delete a booking data from db
@@ -180,6 +241,20 @@ async function run() {
       const id = req.params.id
       const query = { _id: new ObjectId(id) }
       const result = await roomsCollection.deleteOne(query)
+      res.send(result)
+    })
+     //update room data
+      // Update A room
+    app.put('/rooms/:id', async (req, res) => {
+      const room = req.body
+      console.log(room)
+
+      const filter = { _id: new ObjectId(req.params.id) }
+      const options = { upsert: true }
+      const updateDoc = {
+        $set: room,
+      }
+      const result = await roomsCollection.updateOne(filter, updateDoc, options)
       res.send(result)
     })
     
